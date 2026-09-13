@@ -33,6 +33,7 @@
   var sides = {};
   var els = {};
   var current = null;
+  var model = window.DiffModel;
   var blockCount = 0;      // number of change blocks in the rendered diff
   var currentBlock = -1;   // the one the navigation buttons last jumped to
   var resizeTimer = null;
@@ -265,14 +266,10 @@
 
   function updateCounts(key) {
     var value = sides[key].textarea.value;
-    var lines = value === '' ? 0 : splitLines(value).length;
+    var lines = value === '' ? 0 : model.splitLines(value).length;
     sides[key].counts.textContent =
-      lines.toLocaleString() + plural(' line', lines) + ' · ' +
-      value.length.toLocaleString() + plural(' character', value.length);
-  }
-
-  function plural(word, count) {
-    return count === 1 ? word : word + 's';
+      lines.toLocaleString() + model.plural(' line', lines) + ' · ' +
+      value.length.toLocaleString() + model.plural(' character', value.length);
   }
 
   function schedule() {
@@ -326,15 +323,15 @@
       sides.b.error.textContent = '';
     }
 
-    var linesA = splitLines(textA);
-    var linesB = splitLines(textB);
-    var ops = orderOps(window.DiffCore.diff(linesA.map(normalize), linesB.map(normalize)));
+    var linesA = model.splitLines(textA);
+    var linesB = model.splitLines(textB);
+    var ops = model.orderOps(window.DiffCore.diff(linesA.map(normalize), linesB.map(normalize)));
 
     current = {
       linesA: linesA,
       linesB: linesB,
       ops: ops,
-      rows: buildRows(ops)
+      rows: model.buildRows(ops)
     };
 
     expandedGaps = Object.create(null);
@@ -362,129 +359,12 @@
     }
   }
 
-  /**
-   * The edit script may emit an insertion before the deletion it replaces.
-   * Put deletions first inside every change block, the way diff(1) does, so
-   * the exported patch reads conventionally.
-   */
-  function orderOps(ops) {
-    var out = [];
-    var index = 0;
-
-    while (index < ops.length) {
-      if (ops[index].type === 'equal') {
-        out.push(ops[index]);
-        index++;
-        continue;
-      }
-
-      var deletions = [];
-      var insertions = [];
-      while (index < ops.length && ops[index].type !== 'equal') {
-        if (ops[index].type === 'delete') deletions.push(ops[index]);
-        else insertions.push(ops[index]);
-        index++;
-      }
-      out = out.concat(deletions, insertions);
-    }
-
-    return out;
-  }
-
-  function splitLines(text) {
-    var lines = text.split(/\r\n|\r|\n/);
-    if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
-    return lines;
-  }
-
   function normalize(line) {
-    var value = line;
-    if (options.ignoreWhitespace) value = value.replace(/\s+/g, ' ').trim();
-    if (options.ignoreCase) value = value.toLowerCase();
-    return value;
+    return model.normalizeLine(line, options);
   }
 
   function normalizeToken(token) {
-    var value = token;
-    if (options.ignoreWhitespace && /^\s+$/.test(value)) value = ' ';
-    if (options.ignoreCase) value = value.toLowerCase();
-    return value;
-  }
-
-  /**
-   * Turn the flat edit script into displayable rows, pairing deletions with
-   * the insertions that replaced them so both views stay aligned.
-   */
-  function buildRows(ops) {
-    var rows = [];
-    var index = 0;
-
-    while (index < ops.length) {
-      if (ops[index].type === 'equal') {
-        rows.push({ kind: 'equal', a: ops[index].a, b: ops[index].b });
-        index++;
-        continue;
-      }
-
-      var deletions = [];
-      var insertions = [];
-      while (index < ops.length && ops[index].type !== 'equal') {
-        if (ops[index].type === 'delete') deletions.push(ops[index].a);
-        else insertions.push(ops[index].b);
-        index++;
-      }
-
-      var pairs = Math.max(deletions.length, insertions.length);
-      for (var i = 0; i < pairs; i++) {
-        var a = i < deletions.length ? deletions[i] : null;
-        var b = i < insertions.length ? insertions[i] : null;
-        if (a !== null && b !== null) rows.push({ kind: 'mod', a: a, b: b });
-        else if (a !== null) rows.push({ kind: 'del', a: a });
-        else rows.push({ kind: 'ins', b: b });
-      }
-    }
-
-    return rows;
-  }
-
-  /** Replace long runs of unchanged rows with collapsible gaps. */
-  function collapse(rows) {
-    var out = [];
-    var index = 0;
-
-    while (index < rows.length) {
-      if (rows[index].kind !== 'equal') {
-        out.push(rows[index]);
-        index++;
-        continue;
-      }
-
-      var start = index;
-      while (index < rows.length && rows[index].kind === 'equal') index++;
-      var run = index - start;
-      var head = start === 0 ? 0 : CONTEXT;
-      var tail = index === rows.length ? 0 : CONTEXT;
-
-      if (run <= head + tail + 1) {
-        for (var i = start; i < index; i++) out.push(rows[i]);
-        continue;
-      }
-
-      var gapStart = start + head;
-      var gapEnd = index - tail;
-      var key = gapStart + ':' + gapEnd;
-
-      if (expandedGaps[key]) {
-        for (var j = start; j < index; j++) out.push(rows[j]);
-        continue;
-      }
-
-      for (var h = start; h < gapStart; h++) out.push(rows[h]);
-      out.push({ kind: 'gap', key: key, count: gapEnd - gapStart });
-      for (var t = gapEnd; t < index; t++) out.push(rows[t]);
-    }
-
-    return out;
+    return model.normalizeToken(token, options);
   }
 
   /* ------------------------------------------------------------------ *
@@ -494,8 +374,8 @@
   function render() {
     if (!current) return;
 
-    var rows = options.onlyChanges ? collapse(current.rows) : current.rows;
-    var stats = summarise(current.rows);
+    var rows = options.onlyChanges ? model.collapse(current.rows, CONTEXT, expandedGaps) : current.rows;
+    var stats = model.summarise(current.rows);
     renderStats(stats);
 
     if (stats.added === 0 && stats.removed === 0 && stats.modified === 0) {
@@ -508,7 +388,7 @@
     var limited = !renderAll && rows.length > MAX_ROWS;
     var shown = limited ? rows.slice(0, MAX_ROWS) : rows;
 
-    blockCount = assignBlocks(shown);
+    blockCount = model.assignBlocks(shown);
     currentBlock = -1;
     els.output.innerHTML = options.view === 'split' ? renderSplit(shown) : renderInline(shown);
     buildOverview();
@@ -523,17 +403,6 @@
           render();
         });
     }
-  }
-
-  function summarise(rows) {
-    var stats = { added: 0, removed: 0, modified: 0, unchanged: 0 };
-    rows.forEach(function (row) {
-      if (row.kind === 'ins') stats.added++;
-      else if (row.kind === 'del') stats.removed++;
-      else if (row.kind === 'mod') stats.modified++;
-      else if (row.kind === 'equal') stats.unchanged++;
-    });
-    return stats;
   }
 
   function renderStats(stats) {
@@ -623,33 +492,7 @@
       (row.block === undefined ? '' : ' data-block="' + row.block + '"');
   }
 
-  /**
-   * Number the change blocks: every run of consecutive changed rows is one
-   * block, which is what the overview map and the navigation buttons address.
-   * Returns how many there are.
-   */
-  function assignBlocks(rows) {
-    var count = 0;
-    var inBlock = false;
-
-    for (var i = 0; i < rows.length; i++) {
-      var changed = rows[i].kind === 'del' || rows[i].kind === 'ins' || rows[i].kind === 'mod';
-      if (!changed) {
-        delete rows[i].block;
-        inBlock = false;
-        continue;
-      }
-      if (!inBlock) {
-        count++;
-        inBlock = true;
-      }
-      rows[i].block = count - 1;
-    }
-
-    return count;
-  }
-
-  function hasIndex(value) { return value !== undefined && value !== null; }
+  var hasIndex = model.hasIndex;
 
   /** Escaped (and, for modified pairs, word-highlighted) cell contents. */
   function contentFor(row) {
@@ -664,24 +507,18 @@
     }
 
     return {
-      a: hasIndex(row.a) ? escapeHtml(textA) : '',
-      b: hasIndex(row.b) ? escapeHtml(textB) : ''
+      a: hasIndex(row.a) ? model.escapeHtml(textA) : '',
+      b: hasIndex(row.b) ? model.escapeHtml(textB) : ''
     };
   }
 
   function segmentsHtml(segments, className) {
     var html = '';
     for (var i = 0; i < segments.length; i++) {
-      var text = escapeHtml(segments[i].text);
+      var text = model.escapeHtml(segments[i].text);
       html += segments[i].changed ? '<mark class="' + className + '">' + text + '</mark>' : text;
     }
     return html;
-  }
-
-  function escapeHtml(text) {
-    return String(text).replace(/[&<>]/g, function (char) {
-      return char === '&' ? '&amp;' : char === '<' ? '&lt;' : '&gt;';
-    });
   }
 
   /* ------------------------------------------------------------------ *
@@ -724,20 +561,21 @@
       };
       var last = bands[bands.length - 1];
       if (last && last.a === band.a && last.b === band.b && band.top - last.bottom <= 1) {
-        extend(last, band);
+        extendBand(last, band);
       } else {
         bands.push(band);
       }
     }
 
-    bands = mergeBands(bands, total);
+    bands = model.mergeBands(bands, total, MAX_BANDS);
 
     var html = '';
     for (var j = 0; j < bands.length; j++) {
       html += '<div class="overview__band" data-from="' + bands[j].from +
-        '" data-to="' + bands[j].to + '" title="' + escapeHtml(bandTitle(bands[j])) +
-        '" style="top:' + percent(bands[j].top / total) + ';height:' +
-        percent((bands[j].bottom - bands[j].top) / total) + '">' +
+        '" data-to="' + bands[j].to +
+        '" title="' + model.escapeHtml(model.bandTitle(bands[j])) +
+        '" style="top:' + model.percent(bands[j].top / total) + ';height:' +
+        model.percent((bands[j].bottom - bands[j].top) / total) + '">' +
         (bands[j].a ? '<i class="a"></i>' : '') +
         (bands[j].b ? '<i class="b"></i>' : '') +
         '</div>';
@@ -760,7 +598,8 @@
     return { first: Math.min.apply(null, out.concat(Infinity)), last: Math.max.apply(null, out.concat(0)) };
   }
 
-  function extend(band, next) {
+  /** Grow a band so it also covers `next`. */
+  function extendBand(band, next) {
     band.bottom = Math.max(band.bottom, next.bottom);
     band.a = band.a || next.a;
     band.b = band.b || next.b;
@@ -768,18 +607,6 @@
     band.to = Math.max(band.to, next.to);
     band.lines.first = Math.min(band.lines.first, next.lines.first);
     band.lines.last = Math.max(band.lines.last, next.lines.last);
-  }
-
-  function bandTitle(band) {
-    var lines = band.lines.first === Infinity
-      ? ''
-      : band.lines.first === band.lines.last
-        ? 'line ' + band.lines.first
-        : 'lines ' + band.lines.first + '-' + band.lines.last;
-    var blocks = band.from === band.to
-      ? 'change ' + (band.from + 1)
-      : 'changes ' + (band.from + 1) + '-' + (band.to + 1);
-    return lines ? blocks + ' (' + lines + ')' : blocks;
   }
 
   /** Ring the band that holds the change the navigation buttons are on. */
@@ -793,27 +620,6 @@
     }
   }
 
-  /** Fold near-neighbours together so a huge diff stays a handful of nodes. */
-  function mergeBands(bands, total) {
-    var gap = Math.max(1, total / MAX_BANDS);
-    var out = [];
-
-    for (var i = 0; i < bands.length; i++) {
-      var last = out[out.length - 1];
-      if (last && bands[i].top - last.bottom <= gap) {
-        extend(last, bands[i]);
-      } else {
-        out.push(bands[i]);
-      }
-    }
-
-    return out;
-  }
-
-  function percent(fraction) {
-    return (Math.max(0, Math.min(1, fraction)) * 100).toFixed(3) + '%';
-  }
-
   function updateViewport() {
     var pane = els.output;
     var ratio = pane.scrollHeight ? pane.clientHeight / pane.scrollHeight : 1;
@@ -824,8 +630,8 @@
     }
 
     els.overviewViewport.hidden = false;
-    els.overviewViewport.style.top = percent(pane.scrollTop / pane.scrollHeight);
-    els.overviewViewport.style.height = percent(ratio);
+    els.overviewViewport.style.top = model.percent(pane.scrollTop / pane.scrollHeight);
+    els.overviewViewport.style.height = model.percent(ratio);
   }
 
   function resetOverview() {
@@ -845,7 +651,7 @@
   function updateChangeNav() {
     els.changeNav.hidden = blockCount === 0;
     els.changeCount.textContent = currentBlock < 0
-      ? blockCount.toLocaleString() + plural(' change', blockCount)
+      ? blockCount.toLocaleString() + model.plural(' change', blockCount)
       : (currentBlock + 1) + ' / ' + blockCount;
   }
 
@@ -880,79 +686,12 @@
    * Unified diff export
    * ------------------------------------------------------------------ */
 
-  function toUnifiedDiff() {
-    if (!current) return '';
-
-    var ops = current.ops;
-    var hunks = [];
-    var hunk = null;
-    var pending = [];
-
-    function flush() {
-      if (hunk) hunks.push(hunk);
-      hunk = null;
-    }
-
-    for (var i = 0; i < ops.length; i++) {
-      var op = ops[i];
-      if (op.type === 'equal') {
-        var line = ' ' + current.linesA[op.a];
-        if (hunk) {
-          if (hunk.trailing < CONTEXT) {
-            hunk.lines.push(line);
-            hunk.countA++;
-            hunk.countB++;
-            hunk.trailing++;
-          } else {
-            flush();
-            pending = [{ line: line, a: op.a, b: op.b }];
-          }
-        } else {
-          pending.push({ line: line, a: op.a, b: op.b });
-          if (pending.length > CONTEXT) pending.shift();
-        }
-      } else {
-        if (!hunk) {
-          var first = pending[0];
-          hunk = {
-            startA: first ? first.a : (hasIndex(op.a) ? op.a : 0),
-            startB: first ? first.b : (hasIndex(op.b) ? op.b : 0),
-            countA: pending.length,
-            countB: pending.length,
-            lines: pending.map(function (entry) { return entry.line; }),
-            trailing: 0
-          };
-          pending = [];
-        }
-        hunk.trailing = 0;
-        if (op.type === 'delete') {
-          hunk.lines.push('-' + current.linesA[op.a]);
-          hunk.countA++;
-        } else {
-          hunk.lines.push('+' + current.linesB[op.b]);
-          hunk.countB++;
-        }
-      }
-    }
-    flush();
-
-    if (!hunks.length) return '';
-
-    var nameA = sides.a.filename.textContent || 'original';
-    var nameB = sides.b.filename.textContent || 'changed';
-    var out = ['--- ' + nameA, '+++ ' + nameB];
-
-    hunks.forEach(function (entry) {
-      out.push('@@ -' + (entry.startA + 1) + ',' + entry.countA +
-        ' +' + (entry.startB + 1) + ',' + entry.countB + ' @@');
-      out.push.apply(out, entry.lines);
-    });
-
-    return out.join('\n') + '\n';
-  }
-
   function copyUnified() {
-    var text = toUnifiedDiff();
+    var text = current ? model.toUnifiedDiff(current.ops, current.linesA, current.linesB, {
+      context: CONTEXT,
+      nameA: sides.a.filename.textContent,
+      nameB: sides.b.filename.textContent
+    }) : '';
     if (!text) {
       flashButton(els.copy, 'Nothing to copy');
       return;

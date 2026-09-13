@@ -5,7 +5,12 @@
   "description": "A dependency-free diff tool that runs entirely in the browser.",
   "scripts": {
     "test": "node --test test/*.test.js",
-    "serve": "npx --yes http-server -p 8123 -c-1 ."
+    "test:unit": "node --test test/diff.test.js test/model.test.js",
+    "test:ui": "node --test test/ui.test.js",
+    "serve": "node -e \"require('./test/helpers/server.js').serve('.').then(s => console.log(s.origin))\""
+  },
+  "devDependencies": {
+    "playwright": "1.56.1"
   },
   "license": "MIT"
 }

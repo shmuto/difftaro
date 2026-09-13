@@ -1,0 +1,28 @@
+name: CI
+
+# Pull requests cover their own branch, so pushes only need watching on the
+# branch they land in. Otherwise every commit on a PR runs the suite twice.
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      # The site itself has no dependencies; this is Playwright for the
+      # browser tests, pinned by package-lock.json.
+      - run: npm ci
+
+      - name: Install the browser the UI tests drive
+        run: npx playwright install --with-deps chromium
+
+      - run: npm test
