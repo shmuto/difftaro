@@ -1,8 +1,10 @@
 name: CI
 
+# Pull requests cover their own branch, so pushes only need watching on the
+# branch they land in. Otherwise every commit on a PR runs the suite twice.
 on:
   push:
-    branches: ['**']
+    branches: [master]
   pull_request:
 
 jobs:
