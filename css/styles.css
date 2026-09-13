@@ -83,6 +83,9 @@
 
 * { box-sizing: border-box; }
 
+/* An author `display` beats the user-agent rule for [hidden], so state it. */
+[hidden] { display: none !important; }
+
 html { min-height: 100%; }
 
 body {
@@ -355,8 +358,6 @@ main {
   border-radius: 2px;
   pointer-events: none;
 }
-
-.overview__viewport[hidden] { display: none; }
 
 /* The change block the navigation buttons last jumped to. */
 .row.is-current td { box-shadow: inset 0 0 0 9999px color-mix(in srgb, var(--accent) 12%, transparent); }
