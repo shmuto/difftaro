@@ -90,9 +90,24 @@
   </section>
 
   <section class="results" aria-label="Result">
-    <div id="stats" class="stats" role="status"></div>
+    <div class="results__bar">
+      <div id="stats" class="stats" role="status"></div>
+      <div class="changenav" id="changeNav" hidden>
+        <span class="changenav__count" id="changeCount"></span>
+        <button type="button" class="icon-button" id="prevChange"
+                title="Previous change (Alt + Up)" aria-label="Previous change">&#8593;</button>
+        <button type="button" class="icon-button" id="nextChange"
+                title="Next change (Alt + Down)" aria-label="Next change">&#8595;</button>
+      </div>
+    </div>
     <div id="notice" class="notice" hidden></div>
-    <div id="output" class="output"></div>
+    <div class="viewer">
+      <div id="output" class="output"></div>
+      <div class="overview" id="overview" hidden aria-hidden="true" title="Click to jump">
+        <div class="overview__bands" id="overviewBands"></div>
+        <div class="overview__viewport" id="overviewViewport"></div>
+      </div>
+    </div>
   </section>
 </main>
 
