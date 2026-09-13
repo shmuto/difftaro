@@ -33,6 +33,9 @@
   var sides = {};
   var els = {};
   var current = null;
+  var blockCount = 0;      // number of change blocks in the rendered diff
+  var currentBlock = -1;   // the one the navigation buttons last jumped to
+  var resizeTimer = null;
 
   document.addEventListener('DOMContentLoaded', init);
 
@@ -45,6 +48,13 @@
     els.swap = document.getElementById('swapButton');
     els.themeToggle = document.getElementById('themeToggle');
     els.themeLabel = document.getElementById('themeLabel');
+    els.overview = document.getElementById('overview');
+    els.overviewBands = document.getElementById('overviewBands');
+    els.overviewViewport = document.getElementById('overviewViewport');
+    els.changeNav = document.getElementById('changeNav');
+    els.changeCount = document.getElementById('changeCount');
+    els.prevChange = document.getElementById('prevChange');
+    els.nextChange = document.getElementById('nextChange');
 
     ['a', 'b'].forEach(function (key) {
       var root = document.querySelector('.editor[data-side="' + key + '"]');
@@ -166,6 +176,22 @@
       render();
     });
 
+    els.prevChange.addEventListener('click', function () { goToChange(-1); });
+    els.nextChange.addEventListener('click', function () { goToChange(1); });
+    els.output.addEventListener('scroll', updateViewport);
+    els.overview.addEventListener('pointerdown', function (event) {
+      els.overview.setPointerCapture(event.pointerId);
+      scrollToOverview(event);
+    });
+    els.overview.addEventListener('pointermove', function (event) {
+      if (event.buttons & 1) scrollToOverview(event);
+    });
+
+    window.addEventListener('resize', function () {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(buildOverview, 150);
+    });
+
     document.addEventListener('keydown', function (event) {
       if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
         event.preventDefault();
@@ -173,6 +199,12 @@
       } else if (event.altKey && (event.key === 's' || event.key === 'S')) {
         event.preventDefault();
         swap();
+      } else if (event.altKey && event.key === 'ArrowDown') {
+        event.preventDefault();
+        goToChange(1);
+      } else if (event.altKey && event.key === 'ArrowUp') {
+        event.preventDefault();
+        goToChange(-1);
       }
     });
   }
@@ -265,6 +297,7 @@
         'Press Compare (Ctrl/Cmd + Enter) to run it.');
       els.stats.textContent = '';
       els.output.innerHTML = '';
+      resetOverview();
       return;
     }
 
@@ -273,6 +306,7 @@
       hideNotice();
       els.stats.textContent = '';
       els.output.innerHTML = '<p class="empty-state">Paste or drop two files to compare them.</p>';
+      resetOverview();
       return;
     }
 
@@ -467,13 +501,18 @@
     if (stats.added === 0 && stats.removed === 0 && stats.modified === 0) {
       els.output.innerHTML = '<p class="empty-state">No differences' +
         (options.mode === 'json' ? ' in the JSON structure.' : '.') + '</p>';
+      resetOverview();
       return;
     }
 
     var limited = !renderAll && rows.length > MAX_ROWS;
     var shown = limited ? rows.slice(0, MAX_ROWS) : rows;
 
+    blockCount = assignBlocks(shown);
+    currentBlock = -1;
     els.output.innerHTML = options.view === 'split' ? renderSplit(shown) : renderInline(shown);
+    buildOverview();
+    updateChangeNav();
 
     if (limited) {
       showNotice('Showing the first ' + MAX_ROWS.toLocaleString() + ' of ' +
@@ -523,7 +562,7 @@
       }
 
       var cells = contentFor(row);
-      html += '<tr class="row row--' + row.kind + '">' +
+      html += '<tr ' + rowAttrs(row) + '>' +
         '<td class="ln">' + (hasIndex(row.a) ? row.a + 1 : '') + '</td>' +
         '<td class="sign side--a">' + (row.kind === 'del' || row.kind === 'mod' ? '−' : '') + '</td>' +
         '<td class="code side--a">' + cells.a + '</td>' +
@@ -549,22 +588,22 @@
 
       var cells = contentFor(row);
       if (row.kind === 'equal') {
-        html += inlineRow('equal', row.a + 1, row.b + 1, '', cells.a);
+        html += inlineRow(row, 'equal', row.a + 1, row.b + 1, '', cells.a);
       } else if (row.kind === 'del') {
-        html += inlineRow('del', row.a + 1, '', '−', cells.a);
+        html += inlineRow(row, 'del', row.a + 1, '', '−', cells.a);
       } else if (row.kind === 'ins') {
-        html += inlineRow('ins', '', row.b + 1, '+', cells.b);
+        html += inlineRow(row, 'ins', '', row.b + 1, '+', cells.b);
       } else {
-        html += inlineRow('del', row.a + 1, '', '−', cells.a);
-        html += inlineRow('ins', '', row.b + 1, '+', cells.b);
+        html += inlineRow(row, 'del', row.a + 1, '', '−', cells.a);
+        html += inlineRow(row, 'ins', '', row.b + 1, '+', cells.b);
       }
     }
 
     return html + '</tbody></table>';
   }
 
-  function inlineRow(kind, lineA, lineB, sign, content) {
-    return '<tr class="row row--' + kind + '">' +
+  function inlineRow(row, kind, lineA, lineB, sign, content) {
+    return '<tr ' + rowAttrs(row, kind) + '>' +
       '<td class="ln">' + lineA + '</td>' +
       '<td class="ln">' + lineB + '</td>' +
       '<td class="sign">' + sign + '</td>' +
@@ -577,6 +616,37 @@
       '<button type="button" class="gap-button" data-gap="' + row.key + '">' +
       '⋯ ' + row.count.toLocaleString() + ' unchanged line' + (row.count === 1 ? '' : 's') +
       ' — click to expand</button></td></tr>';
+  }
+
+  function rowAttrs(row, kind) {
+    return 'class="row row--' + (kind || row.kind) + '"' +
+      (row.block === undefined ? '' : ' data-block="' + row.block + '"');
+  }
+
+  /**
+   * Number the change blocks: every run of consecutive changed rows is one
+   * block, which is what the overview map and the navigation buttons address.
+   * Returns how many there are.
+   */
+  function assignBlocks(rows) {
+    var count = 0;
+    var inBlock = false;
+
+    for (var i = 0; i < rows.length; i++) {
+      var changed = rows[i].kind === 'del' || rows[i].kind === 'ins' || rows[i].kind === 'mod';
+      if (!changed) {
+        delete rows[i].block;
+        inBlock = false;
+        continue;
+      }
+      if (!inBlock) {
+        count++;
+        inBlock = true;
+      }
+      rows[i].block = count - 1;
+    }
+
+    return count;
   }
 
   function hasIndex(value) { return value !== undefined && value !== null; }
@@ -612,6 +682,198 @@
     return String(text).replace(/[&<>]/g, function (char) {
       return char === '&' ? '&amp;' : char === '<' ? '&lt;' : '&gt;';
     });
+  }
+
+  /* ------------------------------------------------------------------ *
+   * Overview map and change navigation
+   * ------------------------------------------------------------------ */
+
+  var MAX_BANDS = 500;
+
+  /**
+   * Draw the whole diff as a strip of coloured bands next to the scroll area,
+   * so the shape and position of every change is visible at a glance. The
+   * left half of the strip is the original, the right half the changed side.
+   * Bands are measured from the rendered rows, so wrapped lines and collapsed
+   * regions land in the right place.
+   */
+  function buildOverview() {
+    var rows = els.output.querySelectorAll('tr[data-block]');
+    var total = els.output.scrollHeight;
+
+    if (!rows.length || !total) {
+      resetOverview();
+      return;
+    }
+
+    var base = els.output.getBoundingClientRect().top - els.output.scrollTop;
+    var bands = [];
+
+    for (var i = 0; i < rows.length; i++) {
+      var rect = rows[i].getBoundingClientRect();
+      var top = rect.top - base;
+      var block = Number(rows[i].getAttribute('data-block'));
+      var band = {
+        top: top,
+        bottom: top + rect.height,
+        a: rows[i].classList.contains('row--del') || rows[i].classList.contains('row--mod'),
+        b: rows[i].classList.contains('row--ins') || rows[i].classList.contains('row--mod'),
+        from: block,
+        to: block,
+        lines: lineLabels(rows[i])
+      };
+      var last = bands[bands.length - 1];
+      if (last && last.a === band.a && last.b === band.b && band.top - last.bottom <= 1) {
+        extend(last, band);
+      } else {
+        bands.push(band);
+      }
+    }
+
+    bands = mergeBands(bands, total);
+
+    var html = '';
+    for (var j = 0; j < bands.length; j++) {
+      html += '<div class="overview__band" data-from="' + bands[j].from +
+        '" data-to="' + bands[j].to + '" title="' + escapeHtml(bandTitle(bands[j])) +
+        '" style="top:' + percent(bands[j].top / total) + ';height:' +
+        percent((bands[j].bottom - bands[j].top) / total) + '">' +
+        (bands[j].a ? '<i class="a"></i>' : '') +
+        (bands[j].b ? '<i class="b"></i>' : '') +
+        '</div>';
+    }
+
+    els.overviewBands.innerHTML = html;
+    els.overview.hidden = false;
+    markCurrentBand();
+    updateViewport();
+  }
+
+  /** The line numbers a rendered row covers, as shown in the gutters. */
+  function lineLabels(tr) {
+    var out = [];
+    var gutters = tr.querySelectorAll('.ln');
+    for (var i = 0; i < gutters.length; i++) {
+      var value = Number(gutters[i].textContent);
+      if (value) out.push(value);
+    }
+    return { first: Math.min.apply(null, out.concat(Infinity)), last: Math.max.apply(null, out.concat(0)) };
+  }
+
+  function extend(band, next) {
+    band.bottom = Math.max(band.bottom, next.bottom);
+    band.a = band.a || next.a;
+    band.b = band.b || next.b;
+    band.from = Math.min(band.from, next.from);
+    band.to = Math.max(band.to, next.to);
+    band.lines.first = Math.min(band.lines.first, next.lines.first);
+    band.lines.last = Math.max(band.lines.last, next.lines.last);
+  }
+
+  function bandTitle(band) {
+    var lines = band.lines.first === Infinity
+      ? ''
+      : band.lines.first === band.lines.last
+        ? 'line ' + band.lines.first
+        : 'lines ' + band.lines.first + '-' + band.lines.last;
+    var blocks = band.from === band.to
+      ? 'change ' + (band.from + 1)
+      : 'changes ' + (band.from + 1) + '-' + (band.to + 1);
+    return lines ? blocks + ' (' + lines + ')' : blocks;
+  }
+
+  /** Ring the band that holds the change the navigation buttons are on. */
+  function markCurrentBand() {
+    var children = els.overviewBands.children;
+    for (var i = 0; i < children.length; i++) {
+      var from = Number(children[i].getAttribute('data-from'));
+      var to = Number(children[i].getAttribute('data-to'));
+      children[i].classList.toggle('is-current',
+        currentBlock >= 0 && currentBlock >= from && currentBlock <= to);
+    }
+  }
+
+  /** Fold near-neighbours together so a huge diff stays a handful of nodes. */
+  function mergeBands(bands, total) {
+    var gap = Math.max(1, total / MAX_BANDS);
+    var out = [];
+
+    for (var i = 0; i < bands.length; i++) {
+      var last = out[out.length - 1];
+      if (last && bands[i].top - last.bottom <= gap) {
+        extend(last, bands[i]);
+      } else {
+        out.push(bands[i]);
+      }
+    }
+
+    return out;
+  }
+
+  function percent(fraction) {
+    return (Math.max(0, Math.min(1, fraction)) * 100).toFixed(3) + '%';
+  }
+
+  function updateViewport() {
+    var pane = els.output;
+    var ratio = pane.scrollHeight ? pane.clientHeight / pane.scrollHeight : 1;
+
+    if (ratio >= 0.999) {
+      els.overviewViewport.hidden = true;
+      return;
+    }
+
+    els.overviewViewport.hidden = false;
+    els.overviewViewport.style.top = percent(pane.scrollTop / pane.scrollHeight);
+    els.overviewViewport.style.height = percent(ratio);
+  }
+
+  function resetOverview() {
+    blockCount = 0;
+    currentBlock = -1;
+    els.overview.hidden = true;
+    els.overviewBands.innerHTML = '';
+    els.changeNav.hidden = true;
+  }
+
+  function scrollToOverview(event) {
+    var rect = els.overview.getBoundingClientRect();
+    var fraction = (event.clientY - rect.top) / rect.height;
+    els.output.scrollTop = fraction * els.output.scrollHeight - els.output.clientHeight / 2;
+  }
+
+  function updateChangeNav() {
+    els.changeNav.hidden = blockCount === 0;
+    els.changeCount.textContent = currentBlock < 0
+      ? blockCount.toLocaleString() + plural(' change', blockCount)
+      : (currentBlock + 1) + ' / ' + blockCount;
+  }
+
+  /** Scroll to the next (or previous) change block, wrapping around. */
+  function goToChange(step) {
+    if (!blockCount) return;
+
+    currentBlock = currentBlock < 0
+      ? (step > 0 ? 0 : blockCount - 1)
+      : (currentBlock + step + blockCount) % blockCount;
+
+    var rows = els.output.querySelectorAll('tr[data-block="' + currentBlock + '"]');
+    if (!rows.length) return;
+
+    els.output.querySelectorAll('tr.is-current').forEach(function (row) {
+      row.classList.remove('is-current');
+    });
+    rows.forEach(function (row) { row.classList.add('is-current'); });
+
+    var base = els.output.getBoundingClientRect().top - els.output.scrollTop;
+    var first = rows[0].getBoundingClientRect();
+    var last = rows[rows.length - 1].getBoundingClientRect();
+    var top = first.top - base;
+    var height = last.top + last.height - base - top;
+
+    els.output.scrollTop = Math.max(0, top - (els.output.clientHeight - height) / 2);
+    markCurrentBand();
+    updateChangeNav();
   }
 
   /* ------------------------------------------------------------------ *
