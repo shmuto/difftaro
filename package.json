@@ -1,0 +1,11 @@
+{
+  "name": "difftaro",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A dependency-free diff tool that runs entirely in the browser.",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "serve": "npx --yes http-server -p 8123 -c-1 ."
+  },
+  "license": "MIT"
+}

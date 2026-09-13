@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>difftaro — text &amp; JSON diff</title>
+<meta name="description" content="A dependency-free diff tool that runs entirely in your browser. Nothing is uploaded.">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='14'>◧</text></svg>">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand__mark" aria-hidden="true">◧</span>
+    <h1 class="brand__name">difftaro</h1>
+    <p class="brand__tag">Everything runs locally in your browser — no upload, no dependency.</p>
+  </div>
+  <div class="topbar__actions">
+    <div class="segmented" role="tablist" aria-label="Comparison mode">
+      <button type="button" class="segmented__item is-active" role="tab" data-mode="text" aria-selected="true">Text</button>
+      <button type="button" class="segmented__item" role="tab" data-mode="json" aria-selected="false">JSON</button>
+    </div>
+    <button type="button" id="themeToggle" class="icon-button" title="Switch theme" aria-label="Switch theme">
+      <span id="themeLabel">Auto</span>
+    </button>
+  </div>
+</header>
+
+<main>
+  <section class="editors" aria-label="Inputs">
+    <div class="editor" data-side="a">
+      <div class="editor__head">
+        <span class="editor__title">Original</span>
+        <span class="editor__file" data-role="filename"></span>
+        <span class="editor__tools">
+          <button type="button" class="link-button" data-action="open">Open file</button>
+          <button type="button" class="link-button" data-action="clear">Clear</button>
+        </span>
+      </div>
+      <textarea id="inputA" spellcheck="false" autocomplete="off" autocapitalize="off"
+                aria-label="Original text" placeholder="Paste the original text, or drop a file here."></textarea>
+      <div class="editor__foot">
+        <span data-role="counts">0 lines · 0 characters</span>
+        <span data-role="error" class="editor__error" role="status"></span>
+      </div>
+      <input type="file" hidden data-role="file">
+    </div>
+
+    <div class="editors__gap">
+      <button type="button" id="swapButton" class="icon-button" title="Swap sides (Alt+S)" aria-label="Swap sides">⇄</button>
+    </div>
+
+    <div class="editor" data-side="b">
+      <div class="editor__head">
+        <span class="editor__title">Changed</span>
+        <span class="editor__file" data-role="filename"></span>
+        <span class="editor__tools">
+          <button type="button" class="link-button" data-action="open">Open file</button>
+          <button type="button" class="link-button" data-action="clear">Clear</button>
+        </span>
+      </div>
+      <textarea id="inputB" spellcheck="false" autocomplete="off" autocapitalize="off"
+                aria-label="Changed text" placeholder="Paste the changed text, or drop a file here."></textarea>
+      <div class="editor__foot">
+        <span data-role="counts">0 lines · 0 characters</span>
+        <span data-role="error" class="editor__error" role="status"></span>
+      </div>
+      <input type="file" hidden data-role="file">
+    </div>
+  </section>
+
+  <section class="controls" aria-label="Options">
+    <div class="segmented" role="group" aria-label="View">
+      <button type="button" class="segmented__item is-active" data-view="split">Side by side</button>
+      <button type="button" class="segmented__item" data-view="inline">Inline</button>
+    </div>
+
+    <label class="check"><input type="checkbox" data-option="ignoreWhitespace"> Ignore whitespace</label>
+    <label class="check"><input type="checkbox" data-option="ignoreCase"> Ignore case</label>
+    <label class="check"><input type="checkbox" data-option="wordLevel" checked> Highlight words</label>
+    <label class="check"><input type="checkbox" data-option="onlyChanges"> Only changes</label>
+    <label class="check"><input type="checkbox" data-option="wrap" checked> Wrap lines</label>
+    <label class="check" data-only-mode="json"><input type="checkbox" data-option="sortKeys" checked> Sort keys</label>
+
+    <span class="controls__spacer"></span>
+    <button type="button" id="copyButton" class="button">Copy unified diff</button>
+    <button type="button" id="compareButton" class="button button--primary" title="Ctrl/Cmd + Enter">Compare</button>
+  </section>
+
+  <section class="results" aria-label="Result">
+    <div id="stats" class="stats" role="status"></div>
+    <div id="notice" class="notice" hidden></div>
+    <div id="output" class="output"></div>
+  </section>
+</main>
+
+<footer class="footer">
+  <span>difftaro</span>
+  <span aria-hidden="true">·</span>
+  <span>Myers diff, implemented from scratch</span>
+  <span aria-hidden="true">·</span>
+  <a href="https://github.com/shmuto/difftaro">Source</a>
+</footer>
+
+<script src="js/diff.js"></script>
+<script src="js/jsonutil.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
