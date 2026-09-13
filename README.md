@@ -1,92 +1,101 @@
 # difftaro
 
-ブラウザだけで動く差分ツール。静的HTML・CSS・JavaScriptのみで構成されており、
-外部ライブラリもビルド手順もサーバー処理もありません。
+A diff tool that runs entirely in your browser. Static HTML, CSS and JavaScript —
+no external libraries, no build step, no server.
 
-`index.html` をダブルクリックして開くだけで動作します（`file://` でも動作確認済み）。
-入力したテキストやファイルの中身がネットワークに送信されることはありません。
+Double-click `index.html` and it works (`file://` is tested too). Nothing you paste
+or drop on the page is ever sent over the network.
 
-## 機能
+## Features
 
-- **テキスト比較** — 左右のエリアに貼り付けて比較。入力に応じて自動で再計算します。
-- **ファイル比較** — ドラッグ&ドロップ、または「Open file」でローカルファイルを読み込みます
-  （アップロードはせず、ブラウザ内で読むだけです）。
-- **JSON比較** — パースして正規化（インデント統一・キーのソート）してから比較するため、
-  整形やキー順の違いに惑わされません。壊れたJSONはエラー位置を表示し、生テキスト比較にフォールバックします。
-- **2種類の表示** — Side by side（左右2画面）と Inline（1画面）をワンクリックで切替。
-- **単語単位のハイライト** — 変更行の中で実際に変わった部分だけを強調します。
-- **差分の俯瞰マップ** — 差分表示の右端に、ファイル全体を1本の帯に圧縮した地図を表示します。
-  左半分が Original、右半分が Changed で、どこに差分が固まっているかが一目で分かります。
-  クリック／ドラッグでその位置へジャンプ、枠は現在の表示範囲、帯にホバーすると行番号が出ます。
-- **差分間の移動** — 連続する変更行を1ブロックとして数え、`↑` `↓`（`Alt` + `↑` / `Alt` + `↓`）で
-  前後のブロックへジャンプします。「3 / 12」のように現在位置を表示し、飛んだ先のブロックを強調します。
-- **オプション** — 空白無視 / 大文字小文字無視 / 単語ハイライト / 変更箇所のみ表示（前後3行、クリックで展開）/ 折り返し。
-- **unified diff のコピー** — `git apply` できる形式でクリップボードへコピーします。
-- ライト/ダークテーマ、入力とオプションの自動保存（localStorage）、モバイル対応。
-- ショートカット: `Ctrl`/`Cmd` + `Enter` で比較、`Alt` + `S` で左右入替、`Alt` + `↑` / `↓` で差分間を移動。
+- **Text comparison** — paste into the two panes; the diff recomputes as you type.
+- **File comparison** — drag and drop, or use "Open file" to read a local file
+  (it is read in the browser, never uploaded).
+- **JSON comparison** — parses and canonicalises both sides (consistent indentation,
+  sorted keys) before diffing, so formatting and key order stop showing up as changes.
+  Invalid JSON reports the position of the error and falls back to a plain text diff.
+- **Two views** — side by side or inline, one click apart.
+- **Word-level highlighting** — inside a changed line, only the parts that actually
+  differ are marked.
+- **Overview map** — a strip beside the diff that compresses the whole comparison into
+  one column of coloured bands, so you can see at a glance where the changes are. The
+  left half is the original and the right half the changed side; a box tracks the
+  visible range, clicking or dragging jumps there, and hovering a band names its lines.
+- **Change navigation** — consecutive changed lines count as one block; `↑` `↓`
+  (`Alt` + `↑` / `Alt` + `↓`) step between them, with a "3 / 12" counter and the block
+  you land on highlighted.
+- **Options** — ignore whitespace, ignore case, word highlighting, show only changes
+  (3 lines of context, click to expand), line wrapping.
+- **Copy as a unified diff** — in a form `git apply` accepts.
+- Light and dark themes, inputs and options remembered (localStorage), works on a phone.
+- Shortcuts: `Ctrl`/`Cmd` + `Enter` to compare, `Alt` + `S` to swap sides,
+  `Alt` + `↑` / `↓` to step through changes.
 
-## 構成
+## Layout
 
 ```
-index.html      画面
-css/styles.css  スタイル（ライト/ダークのテーマトークン）
-js/diff.js      差分エンジン（Myers O(ND) 線形空間版）+ 単語単位差分
-js/jsonutil.js  JSONの正規化とパースエラーの整形
-js/model.js     編集スクリプト→表示行の変換、折り畳み、俯瞰マップの帯、unified diff生成
-js/app.js       DOMとの結線・描画
-test/           テスト（エンジン・モデルの単体テストとブラウザテスト）
+index.html      the page
+css/styles.css  styles (light and dark theme tokens)
+js/diff.js      the diff engine (Myers O(ND), linear space) and word-level diffing
+js/jsonutil.js  JSON canonicalisation and readable parse errors
+js/model.js     edit script to displayable rows, collapsing, overview bands, unified diff
+js/app.js       DOM wiring and rendering
+test/           unit tests for the engine and the model, plus browser tests
 ```
 
-`js/model.js` は DOM に触れない純粋な処理だけを持つので、ブラウザを起動せずに単体テストできます。
-`js/app.js` はそこに DOM を繋ぐ層です。
+`js/model.js` holds only pure logic that never touches the DOM, so it can be tested
+without launching a browser. `js/app.js` is the layer that connects it to the page.
 
-差分エンジンは Myers のアルゴリズム（1986年論文の線形空間版）をゼロから実装したものです。
-編集グラフを前後から探索して middle snake を求め、分割統治で最小の編集スクリプトを求めます。
-メモリは O(N+M)、時間は O(ND) なので、大きなファイルでも実用的な速度で動きます。
+The engine is Myers' algorithm (the linear-space variant from the 1986 paper),
+implemented from scratch. It searches the edit graph from both ends to find the middle
+snake, then divides and conquers to build a minimal edit script. Memory is O(N+M) and
+time is O(ND), so large files stay fast.
 
-## 開発
+## Development
 
-配布物（HTML/CSS/JS）に依存パッケージはありません。テスト用に Node.js 18以上と、
-ブラウザテストのみ Playwright を使います。
+The site itself has no dependencies. Tests need Node.js 18 or newer, and the browser
+tests need Playwright.
 
 ```bash
-npm ci                                  # Playwright（テスト専用）を入れる
-npx playwright install chromium         # ブラウザ本体（初回のみ）
-npm test                                # 全部（57件）
-npm run test:unit                       # ブラウザ不要の単体テストだけ
-npm run test:ui                         # ブラウザテストだけ
-npm run serve                           # ローカル配信（file:// でも動きます）
+npm ci                                  # install Playwright (tests only)
+npx playwright install chromium         # the browser itself (first time only)
+npm test                                # everything (57 tests)
+npm run test:unit                       # only the tests that need no browser
+npm run test:ui                         # only the browser tests
+npm run serve                           # serve locally (file:// works too)
 ```
 
-Playwright が無い環境では**ブラウザテストは自動でスキップ**され、単体テストだけが走ります。
-push と PR では GitHub Actions が全件を実行します。
+Where Playwright is missing, **the browser tests skip themselves** and the unit tests
+still run. GitHub Actions runs all of them on every push and pull request.
 
-### テストの内訳
+### What the tests cover
 
-| ファイル | 対象 | 件数 |
+| File | Covers | Tests |
 | --- | --- | --- |
-| `test/diff.test.js` | 差分エンジン、単語分割、JSON正規化 | 14 |
-| `test/model.test.js` | 表示行の生成、折り畳み、ブロック番号、unified diff、帯の統合 | 25 |
-| `test/ui.test.js` | 実ブラウザでの描画・エスケープ・俯瞰マップ・操作・永続化 | 18 |
+| `test/diff.test.js` | the diff engine, tokenising, JSON canonicalisation | 14 |
+| `test/model.test.js` | row building, collapsing, block numbering, unified diff, band merging | 25 |
+| `test/ui.test.js` | rendering, escaping, the overview map, interaction and persistence, in a real browser | 18 |
 
-単体テスト側で重視しているのは次の3点です。
+Three things the unit tests are strict about:
 
-- **最小性の検証** — 編集スクリプトが妥当（aから復元でき、インデックスが単調）なだけでなく、
-  DPで求めたLCS長と一致すること、つまり最小の編集スクリプトであることを、
-  ランダム生成した750ケースで確認しています。
-- **パッチの実適用** — 生成した unified diff をテスト内の簡易パッチ適用器に通し、
-  元のテキストから変更後のテキストが復元できることを確認しています。
-- **俯瞰マップの数値** — 帯の統合が巨大な差分でも上限ノード数に収まること、
-  `percent()` が不正な値を返さないことなど。
+- **Minimality** — an edit script must not merely be valid (reconstructs the second
+  text, indices strictly increasing); its number of unchanged lines must equal the LCS
+  length computed by dynamic programming, which makes it a *minimal* script. Checked
+  across 750 randomly generated cases.
+- **Patches that really apply** — the generated unified diff is run through a small
+  patch applier inside the test, which must turn the original text into the changed one.
+- **Overview map arithmetic** — band merging stays under its node budget however large
+  the diff, `percent()` never emits an invalid length, and so on.
 
-ブラウザテストは各テストでコンソールエラーとページエラーを収集し、
-1件でもあれば失敗させます（実際にこれで実装バグを2件検出しています）。
+The browser tests collect console and page errors during every test and fail if there
+are any. That check alone caught two implementation bugs.
 
-## 公開
+## Publishing
 
-静的ファイルのみなので、GitHub Pages ならリポジトリの Settings → Pages で
-ブランチのルート（`/`）を選ぶだけで公開できます。ビルドは不要です。
+The repository is only static files, so GitHub Pages serves it with no build step —
+Settings → Pages, then pick the branch root (`/`). Pages is already enabled here and
+deploys from `master`.
 
-## ライセンス
+## License
 
 MIT
