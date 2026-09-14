@@ -53,13 +53,13 @@ time is O(ND), so large files stay fast.
 
 ## Development
 
-The site itself has no dependencies. Tests need Node.js 18 or newer, and the browser
+The site itself has no dependencies. Tests need Node.js 20 or newer, and the browser
 tests need Playwright.
 
 ```bash
 npm ci                                  # install Playwright (tests only)
 npx playwright install chromium         # the browser itself (first time only)
-npm test                                # everything (57 tests)
+npm test                                # everything
 npm run test:unit                       # only the tests that need no browser
 npm run test:ui                         # only the browser tests
 npm run serve                           # serve locally (file:// works too)
@@ -70,11 +70,11 @@ still run. GitHub Actions runs all of them on every push and pull request.
 
 ### What the tests cover
 
-| File | Covers | Tests |
-| --- | --- | --- |
-| `test/diff.test.js` | the diff engine, tokenising, JSON canonicalisation | 14 |
-| `test/model.test.js` | row building, collapsing, block numbering, unified diff, band merging | 25 |
-| `test/ui.test.js` | rendering, escaping, the overview map, interaction and persistence, in a real browser | 18 |
+| File | Covers |
+| --- | --- |
+| `test/diff.test.js` | the diff engine, tokenising, JSON canonicalisation |
+| `test/model.test.js` | row building, collapsing, block numbering, unified diff, band merging |
+| `test/ui.test.js` | rendering, escaping, the overview map, interaction and persistence, in a real browser |
 
 Three things the unit tests are strict about:
 
@@ -85,16 +85,15 @@ Three things the unit tests are strict about:
 - **Patches that really apply** — the generated unified diff is run through a small
   patch applier inside the test, which must turn the original text into the changed one.
 - **Overview map arithmetic** — band merging stays under its node budget however large
-  the diff, `percent()` never emits an invalid length, and so on.
+  the diff, and `percent()` never emits an invalid length.
 
 The browser tests collect console and page errors during every test and fail if there
-are any. That check alone caught two implementation bugs.
+are any.
 
 ## Publishing
 
 The repository is only static files, so GitHub Pages serves it with no build step —
-Settings → Pages, then pick the branch root (`/`). Pages is already enabled here and
-deploys from `master`.
+Settings → Pages, then pick the branch root (`/`).
 
 ## License
 
